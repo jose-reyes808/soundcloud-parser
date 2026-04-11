@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project extracts a user's liked tracks from SoundCloud and exports them into a structured Excel file. It is the first stage of a larger pipeline that will:
+## What Changed
 
 1. Extract SoundCloud likes  
 2. Export them to Excel  
@@ -10,70 +10,60 @@ This project extracts a user's liked tracks from SoundCloud and exports them int
 4. Create a Spotify playlist  
 5. Update Excel with Spotify match status  
 
----
+## Project Structure
 
-## Current Features
-
-- Fetch liked tracks from SoundCloud API
-- Extract:
-  - Artist name
-  - Track title
-  - Date Uploaded
-  - Date Liked
-  - SoundCloud URL
-  - Duration
-- Export results into Excel (.xlsx)
-
----
-
-## Future Roadmap
-
-### Phase 1 (Current)
-- [x] SoundCloud likes extraction  
-- [x] Excel export  
-- [x] Modular user input system  
-
-### Phase 2
-- [ ] Spotify search integration  
-- [ ] Track matching logic (title + artist fuzzy match)  
-- [ ] Excel update with Spotify IDs  
-
-### Phase 3
-- [ ] Spotify playlist creation via API  
-- [ ] Automatic playlist syncing  
-
----
+```text
+soundcloud-parser/
+|-- sc_likes_to_xlsx.py
+|-- client.py
+|-- exporter.py
+|-- models.py
+|-- parser.py
+|-- parser_settings.example.json
+|-- service.py
+|-- settings.py
+`-- .env
+```
 
 ## Installation
 
-### 1. Clone repository
-```bash
-git clone https://github.com/jose-reyes808/soundcloud-parser.git
-cd soundcloud-parser
-```
-
-### 2. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
----
+## Configuration
 
-## Environment Variables
+### 1. Environment variables
 
-Create a `.env` file or export variables manually.
+Create a `.env` file with your SoundCloud credentials:
 
-### Required:
-- `SOUNDCLOUD_CLIENT_ID`
-- `SOUNDCLOUD_USER_ID`
-
-Example:
 ```bash
 SOUNDCLOUD_CLIENT_ID=your_client_id
 SOUNDCLOUD_USER_ID=your_user_id
 ```
 
----
+### 2. Parser settings
+
+Copy the example settings file and create your own local version:
+
+```bash
+cp parser_settings.example.json parser_settings.json
+```
+
+PowerShell:
+
+```powershell
+Copy-Item parser_settings.example.json parser_settings.json
+```
+
+`parser_settings.json` is ignored by git so each user can customize their own values safely.
+
+You can update these lists there:
+
+- `liveset_keywords`
+- `cutoff_patterns`
+- `remove_patterns`
+- `paren_keywords`
 
 ## Usage
 
@@ -81,59 +71,28 @@ SOUNDCLOUD_USER_ID=your_user_id
 python sc_likes_to_xlsx.py
 ```
 
-### Output
+## Output
 
-Generates:
-```
-soundcloud_likes.xlsx
-```
+Running the script generates:
 
----
+- `soundcloud_likes.xlsx`
+- `soundcloud_livesets.xlsx`
 
-## Output Schema
+Each row includes:
 
-| Column            | Description                                 | 
-|------------------|----------------------------------------------|
-| Artist           | Artist                                       |
-| Title            | Cleaned up Title                             |
-| Artist Source    | Whether it was parsed from title or Username |
-| Original Title   | Original Title of Song                       |
-| Date Uploaded    | Timestamp                                    |
-| Date Liked       | Timestamp                                    |
-| Soundcloud URL   | Direct SoundCloud link                       |
+- Artist
+- Song
+- Artist Source
+- Original Title
+- Date Uploaded
+- Date Liked
+- SoundCloud URL
 
----
+## Design Notes
 
-## Dependencies
+- `SoundCloudClient` handles API pagination and retry behavior
+- `SoundCloudTitleParser` owns title cleanup, parsing, and liveset classification
+- `ExcelExporter` writes formatted Excel output
+- `LikesExportService` coordinates the workflow
 
-```
-requests
-pandas
-python-dotenv
-```
-
-Install manually:
-```bash
-pip install requests pandas python-dotenv
-```
-
----
-
-## Notes
-
-- SoundCloud API responses can be inconsistent; missing fields are handled safely.
-- Rate limits may apply depending on client ID usage.
-- This project assumes public API accessibility via client ID.
-
----
-
-## Next Step (Spotify Integration)
-
-The next module will:
-- Search Spotify for each track
-- Match using:
-  - normalized title
-  - artist string similarity
-- Append:
-  - Spotify track ID
-  - Found / not found status
+This keeps the code easier to test, extend, and eventually grow into the Spotify pipeline you described, without adding extra directory depth.

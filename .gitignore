@@ -1,1 +1,4 @@
 .env
+parser_settings.json
+*.xlsx
+__pycache__/
