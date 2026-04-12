@@ -1,6 +1,15 @@
 # SoundCloud Parser
 
-This project exports SoundCloud likes to Excel, matches those rows against Spotify tracks, and can create a Spotify playlist from the matched results.
+This project is evolving from a local script into a backend-first web app that imports SoundCloud likes, matches them on Spotify, and creates a Spotify playlist for the user through Spotify OAuth.
+
+## Current Direction
+
+The repo now supports two modes:
+
+- legacy local scripts for direct command-line use
+- a new FastAPI web app scaffold that removes Excel from the user flow
+
+The web app is the path forward.
 
 ## Project Structure
 
@@ -8,142 +17,117 @@ This project exports SoundCloud likes to Excel, matches those rows against Spoti
 soundcloud-parser/
 |-- soundcloud_export_likes.py
 |-- spotify_match_from_excel.py
+|-- webapp.py
 |-- parser_settings.example.json
 |-- .env.example
-|-- src/
-|   |-- __init__.py
-|   |-- config.py
-|   |-- models.py
-|   |-- soundcloud/
-|   |   |-- __init__.py
-|   |   |-- client.py
-|   |   |-- exporter.py
-|   |   |-- parser.py
-|   |   `-- service.py
-|   `-- spotify/
-|       |-- __init__.py
-|       |-- client.py
-|       |-- matcher.py
-|       `-- service.py
-`-- .env
+|-- templates/
+|   |-- import_not_found.html
+|   |-- import_status.html
+|   `-- index.html
+`-- src/
+    |-- __init__.py
+    |-- config.py
+    |-- models.py
+    |-- soundcloud/
+    |   |-- __init__.py
+    |   |-- client.py
+    |   |-- exporter.py
+    |   |-- parser.py
+    |   `-- service.py
+    |-- spotify/
+    |   |-- __init__.py
+    |   |-- client.py
+    |   |-- matcher.py
+    |   `-- service.py
+    `-- webapp/
+        |-- __init__.py
+        |-- app.py
+        |-- import_runner.py
+        |-- spotify_api.py
+        |-- spotify_oauth.py
+        `-- storage.py
 ```
 
-## Pipeline
+## Web App Flow
 
-1. Export SoundCloud likes to Excel
-2. Match the Excel rows to Spotify tracks
-3. Optionally create a Spotify playlist from matched tracks
+1. User opens the home page
+2. User enters:
+   - SoundCloud user ID
+   - SoundCloud client ID
+   - desired Spotify playlist name
+3. App redirects the user to Spotify OAuth
+4. Spotify redirects back to the app callback
+5. Backend creates an import job
+6. Background processing fetches SoundCloud likes directly, matches them on Spotify, and creates a playlist
+7. User watches progress on a status page
+
+No Excel file is needed for the web flow.
 
 ## Installation
 
 ```bash
-git clone https://github.com/jose-reyes808/soundcloud-parser.git 
-cd soundcloud-parser
 pip install -r requirements.txt
 ```
 
-## Configuration
+## Environment Variables
 
-### 1. Environment variables
-
-Create a `.env` file with your SoundCloud and Spotify credentials. You can start from `.env.example`:
+Start from `.env.example`.
 
 ```env
-SOUNDCLOUD_CLIENT_ID=your_client_id
-SOUNDCLOUD_USER_ID=your_user_id
+SOUNDCLOUD_CLIENT_ID=your_soundcloud_client_id
+SOUNDCLOUD_USER_ID=your_soundcloud_user_id
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
+WEBAPP_SPOTIFY_REDIRECT_URI=http://127.0.0.1:8000/auth/spotify/callback
+WEBAPP_SESSION_SECRET=replace_with_a_long_random_secret
+APP_BASE_URL=http://127.0.0.1:8000
 ```
 
-### 2. Parser settings
+Notes:
 
-Copy the example settings file and create your own local version:
-
-```bash
-cp parser_settings.example.json parser_settings.json
-```
-
-PowerShell:
-
-```powershell
-Copy-Item parser_settings.example.json parser_settings.json
-```
-
-`parser_settings.json` is ignored by git so each user can customize their own values safely.
-
-You can update these lists there:
-
-- `liveset_keywords`
-- `cutoff_patterns`
-- `remove_patterns`
-- `paren_keywords`
-
-## Spotify App Setup
-
-To use Spotify matching or playlist creation, create a Spotify app in the Spotify Developer Dashboard:
-
-1. Go to `https://developer.spotify.com/dashboard`
-2. Create a new app
-3. Open the app settings
-4. Copy the `Client ID`
-5. Reveal and copy the `Client Secret`
-6. Add this Redirect URI:
+- `SPOTIFY_REDIRECT_URI` is still used by the older CLI script flow
+- `WEBAPP_SPOTIFY_REDIRECT_URI` is used by the FastAPI web app
+- in the Spotify Developer Dashboard, add the web app callback URI exactly as:
 
 ```text
-http://127.0.0.1:8888/callback
+http://127.0.0.1:8000/auth/spotify/callback
 ```
 
-The redirect URI in the dashboard must exactly match the value in your `.env`.
+## Running the Web App
 
-## Usage
+```bash
+python webapp.py
+```
 
-### SoundCloud export
+Then open:
+
+```text
+http://127.0.0.1:8000
+```
+
+## Current MVP Backend Features
+
+- FastAPI app with session support
+- Spotify OAuth redirect and callback flow
+- SQLite-backed import job store
+- background import execution
+- SoundCloud likes fetch directly from API
+- Spotify matching and playlist creation
+- import status page with auto-refresh
+
+## Legacy CLI Scripts
+
+These still exist while the web app is being built out:
 
 ```bash
 python soundcloud_export_likes.py
-```
-
-### Spotify matching
-
-Process the full file:
-
-```bash
-python spotify_match_from_excel.py
-```
-
-Process the full file starting from the bottom of the sheet:
-
-```bash
-python spotify_match_from_excel.py --start-from-bottom
-```
-
-Use a different Excel input file:
-
-```bash
-python spotify_match_from_excel.py --input-file your_file.xlsx
-```
-
-Create a private playlist from matched rows:
-
-```bash
-python spotify_match_from_excel.py --create-playlist --playlist-name "SoundCloud Imports"
-```
-
-Create a playlist from all rows in bottom-to-top order:
-
-```bash
 python spotify_match_from_excel.py --start-from-bottom --create-playlist --playlist-name "SoundCloud Likes"
 ```
 
-## First Spotify Run
+## Next Good Backend Steps
 
-On the first Spotify run, the script will:
-
-1. Print an authorization URL
-2. Open it in your browser when possible
-3. Ask you to approve access
-4. Redirect your browser to `http://127.0.0.1:8888/callback`
-5. Ask you to paste that full redirected URL back into the terminal
-
-The script stores refreshable tokens in `spotify_tokens.json` for future runs.
+- replace the in-process background task with a real job queue
+- store matched/unmatched track rows in the database
+- let users paste a SoundCloud profile URL instead of only a user ID
+- add app-level auth if you want saved import history per user

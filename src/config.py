@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.models import AppConfig, ParserSettings, SpotifyConfig
+from src.models import AppConfig, ParserSettings, SpotifyConfig, WebAppConfig
 
 
 DEFAULT_PAREN_KEYWORDS = [
@@ -141,6 +141,23 @@ class SettingsLoader:
             scopes=SPOTIFY_SCOPES.copy(),
         )
 
+    def load_web_app_config(self) -> WebAppConfig:
+        self._load_environment()
+        return WebAppConfig(
+            project_root=self.project_root,
+            database_file=self.project_root / "webapp.sqlite3",
+            session_secret=self._require_env("WEBAPP_SESSION_SECRET"),
+            soundcloud_client_id=self._require_env("SOUNDCLOUD_CLIENT_ID"),
+            spotify_client_id=self._require_env("SPOTIFY_CLIENT_ID"),
+            spotify_client_secret=self._require_env("SPOTIFY_CLIENT_SECRET"),
+            spotify_redirect_uri=self._get_env(
+                "WEBAPP_SPOTIFY_REDIRECT_URI",
+                self._require_env("SPOTIFY_REDIRECT_URI"),
+            ),
+            spotify_scopes=SPOTIFY_SCOPES.copy(),
+            app_base_url=self._get_env("APP_BASE_URL", "http://127.0.0.1:8000"),
+        )
+
     def _load_environment(self) -> None:
         load_dotenv(self.project_root / ".env")
 
@@ -184,4 +201,9 @@ class SettingsLoader:
         value = os.getenv(name)
         if not value:
             raise ValueError(f"Missing {name} in environment.")
+        return value.strip().strip("'").strip('"')
+
+    @staticmethod
+    def _get_env(name: str, default: str) -> str:
+        value = os.getenv(name, default)
         return value.strip().strip("'").strip('"')

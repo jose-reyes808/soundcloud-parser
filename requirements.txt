@@ -2,3 +2,8 @@ requests
 pandas
 python-dotenv
 openpyxl
+fastapi
+uvicorn
+jinja2
+python-multipart
+itsdangerous

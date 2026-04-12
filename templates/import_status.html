@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Import Status</title>
+    {% if job.status == "pending" or job.status == "running" %}
+    <meta http-equiv="refresh" content="5">
+    {% endif %}
+</head>
+<body>
+    <h1>Import {{ job.id }}</h1>
+    <p>Status: <strong>{{ job.status }}</strong></p>
+    <p>Spotify Account: {{ job.spotify_display_name or job.spotify_user_id or "Unknown" }}</p>
+    <p>SoundCloud User ID: {{ job.soundcloud_user_id }}</p>
+    <p>Playlist Name: {{ job.playlist_name }}</p>
+
+    {% if job.status == "completed" %}
+    <p>Matched tracks: {{ job.matched_count }}</p>
+    <p>Unmatched tracks: {{ job.unmatched_count }}</p>
+    {% if job.playlist_url %}
+    <p><a href="{{ job.playlist_url }}" target="_blank" rel="noreferrer">Open Spotify Playlist</a></p>
+    {% endif %}
+    {% endif %}
+
+    {% if job.status == "failed" %}
+    <p>Error: {{ job.error_message }}</p>
+    {% endif %}
+
+    {% if job.status == "pending" or job.status == "running" %}
+    <p>This page refreshes every 5 seconds while the import is running.</p>
+    {% endif %}
+
+    <p><a href="/">Start another import</a></p>
+</body>
+</html>

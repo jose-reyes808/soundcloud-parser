@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>SoundCloud Parser</title>
+</head>
+<body>
+    <h1>SoundCloud to Spotify</h1>
+    <p>Start an import by entering the SoundCloud details, then connect Spotify.</p>
+
+    {% if flash_message %}
+    <p><strong>{{ flash_message }}</strong></p>
+    {% endif %}
+
+    <form action="/imports/start" method="post">
+        <label for="soundcloud_user_id">SoundCloud User ID</label><br>
+        <input id="soundcloud_user_id" name="soundcloud_user_id" required><br><br>
+
+        <label for="playlist_name">Spotify Playlist Name</label><br>
+        <input id="playlist_name" name="playlist_name" value="SoundCloud Likes" required><br><br>
+
+        <label>
+            <input type="checkbox" name="start_from_bottom">
+            Build from the bottom of the SoundCloud likes list
+        </label><br><br>
+
+        <button type="submit">Connect Spotify</button>
+    </form>
+</body>
+</html>

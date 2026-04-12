@@ -2,4 +2,5 @@
 parser_settings.json
 spotify_tokens.json
 *.xlsx
+webapp.sqlite3
 __pycache__/

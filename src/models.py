@@ -65,6 +65,34 @@ class SpotifyConfig:
 
 
 @dataclass(frozen=True)
+class WebAppConfig:
+    project_root: Path
+    database_file: Path
+    session_secret: str
+    soundcloud_client_id: str
+    spotify_client_id: str
+    spotify_client_secret: str
+    spotify_redirect_uri: str
+    spotify_scopes: list[str]
+    app_base_url: str
+    request_timeout: int = 30
+
+
+@dataclass(frozen=True)
+class SpotifyTokens:
+    access_token: str
+    refresh_token: str | None
+    expires_at: int
+
+
+@dataclass(frozen=True)
+class PendingImportRequest:
+    soundcloud_user_id: str
+    playlist_name: str
+    start_from_bottom: bool = False
+
+
+@dataclass(frozen=True)
 class SpotifyTrackMatch:
     spotify_track_id: str
     spotify_uri: str
