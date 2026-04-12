@@ -2,17 +2,6 @@
 
 This project exports SoundCloud likes to Excel, matches those rows against Spotify tracks, and can create a Spotify playlist from the matched results.
 
-## Why This Layout
-
-For a repo like this, a clean pattern is:
-
-- small runnable scripts at the repo root
-- a single `src/` folder for application code
-- domain folders inside `src/` such as `soundcloud/` and `spotify/`
-- shared config and models at the top of `src/`
-
-That avoids the redundant repo-name directory while still keeping the project organized.
-
 ## Project Structure
 
 ```text
@@ -48,6 +37,8 @@ soundcloud-parser/
 ## Installation
 
 ```bash
+git clone https://github.com/jose-reyes808/soundcloud-parser.git 
+cd soundcloud-parser
 pip install -r requirements.txt
 ```
 
