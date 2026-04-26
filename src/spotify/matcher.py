@@ -14,6 +14,8 @@ from src.models import SpotifyTrackMatch
 class SpotifyTrackMatcher:
     """Score Spotify search results against a parsed artist and song pair."""
 
+    MINIMUM_MATCH_SCORE = 0.55
+
     FEATURE_PATTERN = re.compile(r"\b(?:feat|ft|featuring)\.?\b", re.IGNORECASE)
     FEATURE_BLOCK_PATTERN = re.compile(
         r"[\(\[]\s*(?:feat|ft|featuring)\.?\s+[^\)\]]+[\)\]]",
@@ -49,6 +51,26 @@ class SpotifyTrackMatcher:
     ) -> SpotifyTrackMatch | None:
         """Return the strongest candidate above the minimum confidence threshold."""
 
+        best_match = self.find_best_candidate(artist, song, candidates, search_query)
+        if best_match is None or best_match.match_score < self.MINIMUM_MATCH_SCORE:
+            return None
+        return best_match
+
+    def find_best_candidate(
+        self,
+        artist: str,
+        song: str,
+        candidates: list[dict[str, Any]],
+        search_query: str,
+    ) -> SpotifyTrackMatch | None:
+        """Return the strongest Spotify candidate even if it is below threshold.
+
+        Review tooling benefits from seeing the best near-miss for unmatched
+        rows. The acceptance threshold remains a separate policy decision so we
+        can expose debugging data without silently broadening what gets added to
+        playlists.
+        """
+
         best_match: SpotifyTrackMatch | None = None
 
         for candidate in candidates:
@@ -74,9 +96,6 @@ class SpotifyTrackMatcher:
                     candidate.get("external_urls", {}).get("spotify")
                 ),
             )
-
-        if best_match is None or best_match.match_score < 0.55:
-            return None
 
         return best_match
 

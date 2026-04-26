@@ -103,8 +103,20 @@ class WebImportRunner:
                 )
                 search_query = search_queries[0]
                 match = None
+                best_candidate = None
                 for candidate_query in search_queries:
                     candidates = spotify_api.search_tracks(candidate_query)
+                    candidate_best = spotify_matcher.find_best_candidate(
+                        record.artist,
+                        record.song,
+                        candidates,
+                        candidate_query,
+                    )
+                    if (
+                        candidate_best is not None
+                        and (best_candidate is None or candidate_best.match_score > best_candidate.match_score)
+                    ):
+                        best_candidate = candidate_best
                     candidate_match = spotify_matcher.match(
                         record.artist,
                         record.song,
@@ -131,11 +143,13 @@ class WebImportRunner:
                             soundcloud_track_id=record.soundcloud_track_id,
                             is_liveset=is_liveset,
                             match_status="Unmatched",
-                            match_score=None,
-                            spotify_matched_artist=None,
-                            spotify_matched_song=None,
-                            spotify_url=None,
-                            spotify_search_query=search_query,
+                            match_score=best_candidate.match_score if best_candidate is not None else None,
+                            spotify_matched_artist=best_candidate.matched_artist if best_candidate is not None else None,
+                            spotify_matched_song=best_candidate.matched_song if best_candidate is not None else None,
+                            spotify_url=best_candidate.external_url if best_candidate is not None else None,
+                            spotify_search_query=(
+                                best_candidate.search_query if best_candidate is not None else search_query
+                            ),
                         )
                     )
                     self.store.update_progress(

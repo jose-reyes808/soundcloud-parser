@@ -64,8 +64,20 @@ class SpotifyMatchService:
             )
             search_query = search_queries[0]
             match = None
+            best_candidate = None
             for candidate_query in search_queries:
                 candidates = self.spotify_client.search_tracks(candidate_query)
+                candidate_best = self.spotify_matcher.find_best_candidate(
+                    artist,
+                    song,
+                    candidates,
+                    candidate_query,
+                )
+                if (
+                    candidate_best is not None
+                    and (best_candidate is None or candidate_best.match_score > best_candidate.match_score)
+                ):
+                    best_candidate = candidate_best
                 candidate_match = self.spotify_matcher.match(
                     artist,
                     song,
@@ -84,14 +96,14 @@ class SpotifyMatchService:
                 row_data.update(
                     {
                         "Spotify Match Status": "No Match",
-                        "Spotify Search Query": search_query,
-                        "Spotify Match Score": None,
-                        "Spotify Track ID": None,
-                        "Spotify URI": None,
-                        "Spotify Matched Artist": None,
-                        "Spotify Matched Song": None,
-                        "Spotify Album": None,
-                        "Spotify URL": None,
+                        "Spotify Search Query": best_candidate.search_query if best_candidate is not None else search_query,
+                        "Spotify Match Score": best_candidate.match_score if best_candidate is not None else None,
+                        "Spotify Track ID": best_candidate.spotify_track_id if best_candidate is not None else None,
+                        "Spotify URI": best_candidate.spotify_uri if best_candidate is not None else None,
+                        "Spotify Matched Artist": best_candidate.matched_artist if best_candidate is not None else None,
+                        "Spotify Matched Song": best_candidate.matched_song if best_candidate is not None else None,
+                        "Spotify Album": best_candidate.album_name if best_candidate is not None else None,
+                        "Spotify URL": best_candidate.external_url if best_candidate is not None else None,
                     }
                 )
             else:
