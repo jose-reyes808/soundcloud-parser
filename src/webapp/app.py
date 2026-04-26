@@ -389,18 +389,27 @@ def create_app() -> FastAPI:
         )
 
         try:
-            playlist = soundcloud_api.create_playlist(
+            playlist, accepted_ids, skipped_ids = soundcloud_api.create_playlist_best_effort(
                 title=playlist_title,
                 track_ids=track_ids,
                 description=playlist_description,
                 sharing="private",
             )
             persist_tokens(soundcloud_api.tokens)
-            request.session["flash_message"] = (
-                f"{playlist_title} created successfully."
-                if playlist.get("permalink_url") is None
-                else f"{playlist_title} created successfully: {playlist.get('permalink_url')}"
-            )
+            playlist_url = playlist.get("permalink_url")
+            if skipped_ids:
+                request.session["flash_message"] = (
+                    f"{playlist_title} created with {len(accepted_ids)} tracks. "
+                    f"{len(skipped_ids)} tracks were skipped because SoundCloud would not accept them."
+                    if not playlist_url
+                    else f"{playlist_title} created with {len(accepted_ids)} tracks and {len(skipped_ids)} skipped: {playlist_url}"
+                )
+            else:
+                request.session["flash_message"] = (
+                    f"{playlist_title} created successfully."
+                    if playlist_url is None
+                    else f"{playlist_title} created successfully: {playlist_url}"
+                )
         except Exception:
             logger.exception("SoundCloud playlist creation failed.")
             request.session["flash_message"] = f"The app could not create {playlist_title}."
