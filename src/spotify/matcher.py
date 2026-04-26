@@ -194,7 +194,11 @@ class SpotifyTrackMatcher:
             canonical_source_song,
             canonical_candidate_song,
         ).ratio()
-        song_score = max(direct_song_score, canonical_song_score)
+        title_token_overlap_score = self._score_title_token_overlap(
+            canonical_source_song,
+            canonical_candidate_song,
+        )
+        song_score = max(direct_song_score, canonical_song_score, title_token_overlap_score)
 
         direct_artist_score = SequenceMatcher(
             None,
@@ -211,6 +215,14 @@ class SpotifyTrackMatcher:
             song_score = max(song_score, 0.98)
         if source_contributors and source_contributors.issubset(candidate_contributors):
             artist_score = max(artist_score, 0.98)
+
+        # Search broadening is useful for recall, but we still need a guardrail
+        # against "same vibe, wrong record" matches. If the title is only
+        # loosely similar and the artist evidence is weak, this candidate should
+        # not survive on title fuzziness alone.
+        if artist_score < 0.5 and contributor_overlap_score == 0.0:
+            if canonical_source_song != canonical_candidate_song and title_token_overlap_score < 1.0:
+                return 0.0
 
         return (song_score * 0.65) + (artist_score * 0.35)
 
@@ -303,6 +315,30 @@ class SpotifyTrackMatcher:
                 matched_source_contributors += 1
 
         return matched_source_contributors / len(source)
+
+    @staticmethod
+    def _score_title_token_overlap(source_title: str, candidate_title: str) -> float:
+        """Measure title agreement using exact normalized tokens.
+
+        Sequence similarity is good at spotting close spellings, but it can
+        over-credit pairs like `danger` and `dangerous`. Token overlap is a
+        better guardrail for deciding whether two titles refer to the same
+        underlying song identity.
+        """
+
+        source_tokens = {token for token in source_title.split() if token}
+        candidate_tokens = {token for token in candidate_title.split() if token}
+        if not source_tokens or not candidate_tokens:
+            return 0.0
+
+        if source_tokens == candidate_tokens:
+            return 1.0
+
+        overlap = source_tokens.intersection(candidate_tokens)
+        if not overlap:
+            return 0.0
+
+        return len(overlap) / max(len(source_tokens), len(candidate_tokens))
 
     @classmethod
     def _infer_artist_from_trailing_mix_title(cls, original_title: str) -> tuple[str | None, str | None]:
