@@ -1,15 +1,27 @@
 from __future__ import annotations
 
+"""Title-cleaning and parsing rules for noisy SoundCloud track names."""
+
 import re
 
 from src.models import ParserSettings
 
-
+# SoundCloud metadata is noisy enough that title interpretation deserves its
+# own domain object. Treating parsing as a separate concern keeps the import
+# pipeline readable and makes the matching behavior easier to refine over time.
 class SoundCloudTitleParser:
+    """Convert raw SoundCloud titles into cleaner artist and song values."""
+
     def __init__(self, settings: ParserSettings) -> None:
+        """Store the parser rules that drive cleanup and liveset detection."""
+
         self.settings = settings
 
+    # The parser removes marketing language aggressively because Spotify search
+    # quality depends far more on canonical track text than on release copy.
     def clean_promotional(self, text: str | None) -> str | None:
+        """Strip common release-marketing text from a track title."""
+
         if not text:
             return text
 
@@ -35,7 +47,11 @@ class SoundCloudTitleParser:
         cleaned_text = re.sub(r"\[\s*\]", "", cleaned_text)
         return cleaned_text.strip()
 
+    # This second pass is about normalization, not interpretation. By the time
+    # we reach it, the goal is to make strings stable for display and matching.
     def postprocess_text(self, text: str | None) -> str | None:
+        """Normalize punctuation and whitespace after the main cleanup passes."""
+
         if not text:
             return text
 
@@ -55,12 +71,16 @@ class SoundCloudTitleParser:
         processed_text = re.sub(r"\s+", " ", processed_text)
         return processed_text.strip()
 
+    # Livesets are treated as a different output category because they tend to
+    # behave poorly in track-by-track matching workflows and exports.
     def is_liveset(
         self,
         song: str,
         artist: str = "",
         original_title: str = "",
     ) -> bool:
+        """Decide whether a parsed row looks like a liveset instead of a track."""
+
         searchable_text = f"{artist} {song} {original_title}".lower()
 
         for keyword in self.settings.liveset_keywords:
@@ -75,7 +95,17 @@ class SoundCloudTitleParser:
 
         return False
 
+    # The parser optimizes for recovering a useful search key, not for perfect
+    # bibliographic accuracy. When the title is weak, falling back to uploader
+    # data is often better than pretending the record is unusable.
     def parse_title(self, title: str | None, uploader: str) -> tuple[str, str, str]:
+        """Extract artist and song names from a raw SoundCloud title.
+
+        The parser prefers `Artist - Song` style titles. If that signal is not
+        present, it falls back to the uploader name as the artist so downstream
+        matching still has a reasonable query to work with.
+        """
+
         if not title:
             return uploader, "", "Uploader Fallback"
 
@@ -115,7 +145,11 @@ class SoundCloudTitleParser:
         clean_song = self.postprocess_text(song) or ""
         return clean_artist, clean_song, source
 
+    # Parenthetical content is preserved only when it changes identity rather
+    # than presentation; remix labels matter, generic release copy does not.
     def _filter_parenthetical_content(self, match: re.Match[str]) -> str:
+        """Keep only parenthetical text that looks musically meaningful."""
+
         content = match.group(1).strip()
         if any(keyword in content.lower() for keyword in self.settings.paren_keywords):
             return f"({content})"

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+"""Application service for the legacy SoundCloud likes export command."""
+
 from src.models import AppConfig, ExportResult, ParserSettings
 from src.soundcloud.client import SoundCloudClient
 from src.soundcloud.exporter import ExcelExporter
 from src.soundcloud.parser import SoundCloudTitleParser
 
-
+# This service represents the old local export flow as one coherent use case.
+# It exists mainly to keep the command surface thin and the orchestration readable.
 class LikesExportService:
+    """Coordinate fetching, parsing, and writing SoundCloud likes to disk."""
+
     def __init__(self, app_config: AppConfig, parser_settings: ParserSettings) -> None:
+        """Compose the SoundCloud client, parser, and exporter for one run."""
+
         self.app_config = app_config
         self.parser_settings = parser_settings
         self.title_parser = SoundCloudTitleParser(parser_settings)
@@ -18,7 +25,11 @@ class LikesExportService:
         )
         self.exporter = ExcelExporter(self.title_parser)
 
+    # The service prints a lightweight console summary because this flow is
+    # primarily used interactively from the terminal.
     def run(self) -> ExportResult:
+        """Execute the full export workflow and print a simple console summary."""
+
         likes = self.client.get_likes()
         print(f"Pages completed. Total likes collected: {len(likes)}")
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Legacy spreadsheet-driven Spotify matching workflow."""
+
 from pathlib import Path
 
 import pandas as pd
@@ -8,8 +10,11 @@ from src.models import MatchRunSummary
 from src.spotify.client import SpotifyClient
 from src.spotify.matcher import SpotifyTrackMatcher
 
-
+# This service preserves the spreadsheet workflow as a well-bounded use case.
+# That makes it easier to keep around without letting it shape the newer web app.
 class SpotifyMatchService:
+    """Match spreadsheet rows on Spotify and optionally create a playlist."""
+
     REQUIRED_COLUMNS = ["Artist", "Song"]
 
     def __init__(
@@ -17,9 +22,13 @@ class SpotifyMatchService:
         spotify_client: SpotifyClient,
         spotify_matcher: SpotifyTrackMatcher,
     ) -> None:
+        """Compose the Spotify API client and the matching heuristic."""
+
         self.spotify_client = spotify_client
         self.spotify_matcher = spotify_matcher
 
+    # This method is the orchestration layer for the legacy Excel flow and is
+    # intentionally linear so it is easy to debug row by row.
     def run(
         self,
         input_file: Path,
@@ -29,6 +38,12 @@ class SpotifyMatchService:
         playlist_public: bool = False,
         start_from_bottom: bool = False,
     ) -> MatchRunSummary:
+        """Execute the full spreadsheet matching workflow.
+
+        Rows are read from Excel, matched against Spotify search results, written
+        back to a new workbook, and optionally collected into a playlist.
+        """
+
         dataframe = self._load_input_file(input_file)
         self._validate_columns(dataframe)
         if start_from_bottom:
@@ -106,7 +121,11 @@ class SpotifyMatchService:
         )
 
     @classmethod
+    # Early validation keeps the matching loop simple and produces a clearer
+    # failure than letting missing columns surface later as KeyErrors.
     def _validate_columns(cls, dataframe: pd.DataFrame) -> None:
+        """Ensure the input sheet contains the columns needed for matching."""
+
         missing_columns = [
             column_name for column_name in cls.REQUIRED_COLUMNS if column_name not in dataframe.columns
         ]
@@ -116,6 +135,8 @@ class SpotifyMatchService:
 
     @staticmethod
     def _load_input_file(input_file: Path) -> pd.DataFrame:
+        """Load the input workbook from disk with a clear missing-file error."""
+
         if not input_file.exists():
             raise FileNotFoundError(f"Input file not found: {input_file}")
 
@@ -123,6 +144,8 @@ class SpotifyMatchService:
 
     @staticmethod
     def _safe_cell(value: object) -> str:
+        """Normalize a spreadsheet cell into a stripped string value."""
+
         if value is None or pd.isna(value):
             return ""
         return str(value).strip()

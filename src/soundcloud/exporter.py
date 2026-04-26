@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Excel export support for the legacy SoundCloud likes workflow."""
+
 from pathlib import Path
 
 import pandas as pd
@@ -8,17 +10,26 @@ from openpyxl import load_workbook
 from src.models import ExportResult, TrackRecord
 from src.soundcloud.parser import SoundCloudTitleParser
 
-
+# Spreadsheet export is treated as an edge concern. This class keeps file-format
+# behavior out of the fetching and parsing layers so those pieces stay reusable.
 class ExcelExporter:
+    """Write normalized SoundCloud likes into track and liveset spreadsheets."""
+
     def __init__(self, title_parser: SoundCloudTitleParser) -> None:
+        """Keep a parser reference so export can classify livesets consistently."""
+
         self.title_parser = title_parser
 
+    # Tracks and livesets are written separately because they serve different
+    # use cases once the data leaves the parser.
     def export(
         self,
         likes: list[TrackRecord],
         tracks_file: Path,
         livesets_file: Path,
     ) -> ExportResult:
+        """Export likes into two workbooks and return a summary of the results."""
+
         rows = [record.to_row() for record in likes]
         dataframe = pd.DataFrame(rows)
 
@@ -68,7 +79,11 @@ class ExcelExporter:
         )
 
     @staticmethod
+    # Excel handles naive datetimes more predictably than timezone-aware values,
+    # so the export normalizes them before writing.
     def _normalize_datetime_columns(dataframe: pd.DataFrame) -> None:
+        """Convert date columns into naive datetimes that Excel handles cleanly."""
+
         for column_name in ["Date Uploaded", "Date Liked"]:
             if column_name in dataframe.columns:
                 dataframe[column_name] = pd.to_datetime(
@@ -77,7 +92,11 @@ class ExcelExporter:
                 ).dt.tz_localize(None)
 
     @staticmethod
+    # Autosizing keeps the exported workbooks readable without any manual
+    # cleanup after the script runs.
     def _autosize_excel_columns(file_path: Path) -> None:
+        """Resize worksheet columns based on the longest cell value in each one."""
+
         workbook = load_workbook(file_path)
         worksheet = workbook.active
 

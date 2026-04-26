@@ -1,28 +1,44 @@
 from __future__ import annotations
 
+"""Background orchestration for the web app's SoundCloud-to-Spotify import."""
+
 from src.config import SettingsLoader
-from src.models import PendingImportRequest, SpotifyTokens
+from src.models import SpotifyTokens
 from src.soundcloud.client import SoundCloudClient
 from src.soundcloud.parser import SoundCloudTitleParser
 from src.spotify.matcher import SpotifyTrackMatcher
 from src.webapp.spotify_api import SpotifyApiClient
 from src.webapp.spotify_oauth import SpotifyOAuthService
-from src.webapp.storage import ImportJobStore
+from src.webapp.storage import ImportJobStore, ImportTrackResult
 
-
+# `WebImportRunner` is the application's main use-case object. It holds the
+# end-to-end import workflow so the worker entrypoint can stay operationally
+# simple and the orchestration logic can evolve in one place.
 class WebImportRunner:
+    """Execute the long-running import job that powers the web workflow."""
+
     def __init__(
         self,
         settings_loader: SettingsLoader,
         store: ImportJobStore,
         oauth_service: SpotifyOAuthService,
     ) -> None:
+        """Bind the services needed to fetch likes, match tracks, and persist state."""
+
         self.settings_loader = settings_loader
         self.store = store
         self.oauth_service = oauth_service
         self.web_config = oauth_service.config
 
+    # This is the core business workflow of the web app: fetch likes, match
+    # tracks, create a playlist, and keep the status page informed throughout.
     def run_import(self, job_id: str) -> None:
+        """Run one queued import job from SoundCloud likes to Spotify playlist.
+
+        Progress is written back to the job store throughout the run so the web
+        frontend can show meaningful status updates instead of a single spinner.
+        """
+
         job = self.store.get_job(job_id)
         self.store.update_status(job_id, "running", current_phase="Fetching SoundCloud likes")
 
@@ -71,6 +87,7 @@ class WebImportRunner:
 
             matched_uris: list[str] = []
             unmatched_count = 0
+            review_results: list[ImportTrackResult] = []
 
             for index, record in enumerate(likes, start=1):
                 search_query = spotify_matcher.build_search_query(record.artist, record.song)
@@ -80,6 +97,23 @@ class WebImportRunner:
 
                 if match is None:
                     unmatched_count += 1
+                    review_results.append(
+                        ImportTrackResult(
+                            id=0,
+                            job_id=job_id,
+                            row_index=index,
+                            artist=record.artist,
+                            song=record.song,
+                            original_title=record.original_title,
+                            soundcloud_url=record.soundcloud_url,
+                            match_status="Unmatched",
+                            match_score=None,
+                            spotify_matched_artist=None,
+                            spotify_matched_song=None,
+                            spotify_url=None,
+                            spotify_search_query=search_query,
+                        )
+                    )
                     self.store.update_progress(
                         job_id,
                         current_phase="Matching tracks on Spotify",
@@ -93,6 +127,23 @@ class WebImportRunner:
                     continue
 
                 matched_uris.append(match.spotify_uri)
+                review_results.append(
+                    ImportTrackResult(
+                        id=0,
+                        job_id=job_id,
+                        row_index=index,
+                        artist=record.artist,
+                        song=record.song,
+                        original_title=record.original_title,
+                        soundcloud_url=record.soundcloud_url,
+                        match_status="Matched",
+                        match_score=match.match_score,
+                        spotify_matched_artist=match.matched_artist,
+                        spotify_matched_song=match.matched_song,
+                        spotify_url=match.external_url,
+                        spotify_search_query=match.search_query,
+                    )
+                )
                 self.store.update_progress(
                     job_id,
                     current_phase="Matching tracks on Spotify",
@@ -103,6 +154,8 @@ class WebImportRunner:
                     current_artist=record.artist,
                     current_song=record.song,
                 )
+
+            self.store.replace_track_results(job_id, review_results)
 
             playlist = None
             if matched_uris:

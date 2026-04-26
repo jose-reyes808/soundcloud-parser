@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Match Results</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+    <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.16),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.12),_transparent_32%)]"></div>
+
+    <main class="relative mx-auto max-w-7xl px-6 py-10">
+        <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+                <p class="text-sm uppercase tracking-[0.2em] text-sky-300">Review Results</p>
+                <h1 class="mt-2 text-4xl font-semibold text-white">SoundCloud to Spotify match review</h1>
+                <p class="mt-3 max-w-3xl text-slate-300">
+                    Review every parsed row, see what matched, and focus on unmatched tracks that may still exist on Spotify.
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <a href="/imports/{{ job.id }}" class="inline-flex items-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                    Back to Status
+                </a>
+                {% if job.playlist_url %}
+                <a href="{{ job.playlist_url }}" target="_blank" rel="noreferrer" class="inline-flex items-center rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-50">
+                    Open Spotify Playlist
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <section class="mb-6 grid gap-4 md:grid-cols-4">
+            <div class="rounded-3xl border border-white/10 bg-slate-900/75 p-5 backdrop-blur-xl">
+                <p class="text-sm text-slate-400">Playlist Name</p>
+                <p class="mt-2 text-lg font-semibold text-white">{{ job.playlist_name }}</p>
+            </div>
+            <div class="rounded-3xl border border-white/10 bg-slate-900/75 p-5 backdrop-blur-xl">
+                <p class="text-sm text-slate-400">Total Rows</p>
+                <p class="mt-2 text-3xl font-semibold text-white">{{ job.total_tracks }}</p>
+            </div>
+            <div class="rounded-3xl border border-white/10 bg-slate-900/75 p-5 backdrop-blur-xl">
+                <p class="text-sm text-slate-400">Matched</p>
+                <p class="mt-2 text-3xl font-semibold text-emerald-300">{{ job.matched_count }}</p>
+            </div>
+            <div class="rounded-3xl border border-white/10 bg-slate-900/75 p-5 backdrop-blur-xl">
+                <p class="text-sm text-slate-400">Unmatched</p>
+                <p class="mt-2 text-3xl font-semibold text-amber-300">{{ job.unmatched_count }}</p>
+            </div>
+        </section>
+
+        <section class="mb-6 rounded-3xl border border-white/10 bg-slate-900/75 p-5 backdrop-blur-xl">
+            <div class="flex flex-wrap gap-3">
+                <a href="/imports/{{ job.id }}/results?status=all" class="rounded-2xl px-4 py-2 text-sm font-medium {% if selected_status == 'all' %}bg-sky-400 text-slate-950{% else %}border border-white/10 bg-white/5 text-white hover:bg-white/10{% endif %}">
+                    All
+                </a>
+                <a href="/imports/{{ job.id }}/results?status=matched" class="rounded-2xl px-4 py-2 text-sm font-medium {% if selected_status == 'matched' %}bg-emerald-400 text-slate-950{% else %}border border-white/10 bg-white/5 text-white hover:bg-white/10{% endif %}">
+                    Matched
+                </a>
+                <a href="/imports/{{ job.id }}/results?status=unmatched" class="rounded-2xl px-4 py-2 text-sm font-medium {% if selected_status == 'unmatched' %}bg-amber-300 text-slate-950{% else %}border border-white/10 bg-white/5 text-white hover:bg-white/10{% endif %}">
+                    Unmatched
+                </a>
+            </div>
+        </section>
+
+        <section class="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/75 shadow-2xl shadow-slate-950/30 backdrop-blur-xl">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-white/10 text-left">
+                    <thead class="bg-white/5 text-xs uppercase tracking-[0.18em] text-slate-400">
+                        <tr>
+                            <th class="px-4 py-4">#</th>
+                            <th class="px-4 py-4">SoundCloud Artist</th>
+                            <th class="px-4 py-4">SoundCloud Song</th>
+                            <th class="px-4 py-4">Status</th>
+                            <th class="px-4 py-4">Score</th>
+                            <th class="px-4 py-4">Spotify Match</th>
+                            <th class="px-4 py-4">Links</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5 text-sm text-slate-200">
+                        {% for result in results %}
+                        <tr class="align-top">
+                            <td class="px-4 py-4 text-slate-400">{{ result.row_index }}</td>
+                            <td class="px-4 py-4">
+                                <p class="font-medium text-white">{{ result.artist }}</p>
+                                <p class="mt-1 text-xs text-slate-400">{{ result.original_title }}</p>
+                            </td>
+                            <td class="px-4 py-4 text-white">{{ result.song }}</td>
+                            <td class="px-4 py-4">
+                                {% if result.match_status == "Matched" %}
+                                <span class="inline-flex rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-300">Matched</span>
+                                {% else %}
+                                <span class="inline-flex rounded-full bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-300">Unmatched</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-4 text-slate-300">
+                                {% if result.match_score is not none %}
+                                {{ "%.2f"|format(result.match_score) }}
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-4">
+                                {% if result.spotify_matched_song %}
+                                <p class="font-medium text-white">{{ result.spotify_matched_song }}</p>
+                                <p class="mt-1 text-xs text-slate-400">{{ result.spotify_matched_artist }}</p>
+                                {% else %}
+                                <span class="text-slate-500">No Spotify match</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-4">
+                                <div class="flex flex-col gap-2">
+                                    {% if result.soundcloud_url %}
+                                    <a href="{{ result.soundcloud_url }}" target="_blank" rel="noreferrer" class="text-sky-300 hover:text-sky-200">SoundCloud</a>
+                                    {% endif %}
+                                    {% if result.spotify_url %}
+                                    <a href="{{ result.spotify_url }}" target="_blank" rel="noreferrer" class="text-emerald-300 hover:text-emerald-200">Spotify</a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if not results %}
+            <div class="px-6 py-12 text-center text-slate-400">
+                No rows matched this filter yet.
+            </div>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

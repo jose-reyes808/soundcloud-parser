@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+"""FastAPI application factory and routes for the public web experience."""
+
 import logging
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -20,8 +22,17 @@ from src.webapp.tasks import run_import_job
 
 logger = logging.getLogger(__name__)
 
-
+# This factory is the composition root for the deployed application. Keeping
+# dependency assembly here makes the request layer straightforward and prevents
+# infrastructure concerns from leaking into the route handlers themselves.
 def create_app() -> FastAPI:
+    """Create and configure the FastAPI application.
+
+    The app owns the web-facing flow: accept user input, start Spotify OAuth,
+    create import jobs after the callback, and expose both HTML pages and a
+    lightweight JSON endpoint for live progress updates.
+    """
+
     project_root = Path(__file__).resolve().parents[2]
     settings_loader = SettingsLoader(project_root)
     web_config = settings_loader.load_web_app_config()
@@ -33,8 +44,12 @@ def create_app() -> FastAPI:
     app = FastAPI(title="SoundCloud Parser Web App")
     app.add_middleware(SessionMiddleware, secret_key=web_config.session_secret)
 
+    # The landing page doubles as the place where user-facing flash messages
+    # are surfaced after redirects and failed initialization attempts.
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request) -> HTMLResponse:
+        """Render the landing page and surface any flash message from redirects."""
+
         flash_message = request.session.pop("flash_message", None)
         return templates.TemplateResponse(
             request=request,
@@ -45,6 +60,8 @@ def create_app() -> FastAPI:
             },
         )
 
+    # Import startup does only the work required before OAuth: validate input,
+    # resolve the SoundCloud profile, and stash a pending request in session.
     @app.post("/imports/start")
     async def start_import(
         request: Request,
@@ -52,6 +69,8 @@ def create_app() -> FastAPI:
         playlist_name: str = Form("SoundCloud Likes"),
         start_from_bottom: str | None = Form(None),
     ) -> RedirectResponse:
+        """Validate the request, resolve the SoundCloud user, and start OAuth."""
+
         try:
             soundcloud_user_id = SoundCloudClient.resolve_user_id(
                 client_id=web_config.soundcloud_client_id,
@@ -82,6 +101,8 @@ def create_app() -> FastAPI:
             status_code=303,
         )
 
+    # The callback finishes authorization, creates a durable job record, and
+    # hands the expensive work off to the background queue.
     @app.get("/auth/spotify/callback")
     async def spotify_callback(
         request: Request,
@@ -89,6 +110,8 @@ def create_app() -> FastAPI:
         state: str | None = None,
         error: str | None = None,
     ) -> RedirectResponse:
+        """Complete Spotify OAuth and enqueue the background import job."""
+
         if error:
             request.session["flash_message"] = f"Spotify authorization failed: {error}"
             return RedirectResponse("/", status_code=303)
@@ -145,8 +168,12 @@ def create_app() -> FastAPI:
 
         return RedirectResponse(f"/imports/{job.id}", status_code=303)
 
+    # The HTML status route is intentionally separate from the JSON endpoint so
+    # the frontend can stay simple and server-rendered.
     @app.get("/imports/{job_id}", response_class=HTMLResponse)
     async def import_status(request: Request, job_id: str) -> HTMLResponse:
+        """Render the status dashboard for a single import job."""
+
         try:
             job = store.get_job(job_id)
         except KeyError:
@@ -163,8 +190,49 @@ def create_app() -> FastAPI:
             context={"job": job},
         )
 
+    @app.get("/imports/{job_id}/results", response_class=HTMLResponse)
+    async def import_results(
+        request: Request,
+        job_id: str,
+        status: str = Query("all"),
+    ) -> HTMLResponse:
+        """Render a detailed review page for track-level match results."""
+
+        try:
+            job = store.get_job(job_id)
+        except KeyError:
+            return templates.TemplateResponse(
+                request=request,
+                name="import_not_found.html",
+                context={"job_id": job_id},
+                status_code=404,
+            )
+
+        results = store.list_track_results(job_id)
+        normalized_status = status.lower().strip()
+        if normalized_status == "matched":
+            results = [result for result in results if result.match_status == "Matched"]
+        elif normalized_status == "unmatched":
+            results = [result for result in results if result.match_status == "Unmatched"]
+        else:
+            normalized_status = "all"
+
+        return templates.TemplateResponse(
+            request=request,
+            name="import_results.html",
+            context={
+                "job": job,
+                "results": results,
+                "selected_status": normalized_status,
+            },
+        )
+
+    # Polling this endpoint keeps the UI lightweight while still showing real
+    # progress from the worker.
     @app.get("/api/imports/{job_id}", response_class=JSONResponse)
     async def import_status_api(job_id: str) -> JSONResponse:
+        """Expose machine-readable job progress for polling from the UI."""
+
         try:
             job = store.get_job(job_id)
         except KeyError:

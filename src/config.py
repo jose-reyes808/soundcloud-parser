@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Configuration loading utilities for both local and web execution modes."""
+
 import json
 import os
 from pathlib import Path
@@ -87,12 +89,21 @@ SPOTIFY_SCOPES = [
     "playlist-modify-public",
 ]
 
-
+# `SettingsLoader` is the point where unstructured configuration becomes typed
+# application state. That keeps environment handling explicit and localized.
 class SettingsLoader:
+    """Load environment variables and parser settings into typed config objects."""
+
     def __init__(self, project_root: Path) -> None:
+        """Bind the loader to the repository root used for files and secrets."""
+
         self.project_root = project_root
 
+    # This supports the legacy local export path, which still expects concrete
+    # file outputs and a fixed SoundCloud user target.
     def load_app_config(self) -> AppConfig:
+        """Load settings for the legacy SoundCloud-to-Excel export flow."""
+
         self._load_environment()
 
         soundcloud_client_id = self._require_env("SOUNDCLOUD_CLIENT_ID")
@@ -106,7 +117,11 @@ class SettingsLoader:
             livesets_output_file=self.project_root / "soundcloud_livesets.xlsx",
         )
 
+    # Parser settings live outside the code so cleanup rules can evolve without
+    # forcing users to edit Python modules directly.
     def load_parser_settings(self) -> ParserSettings:
+        """Load parser overrides from JSON, falling back to repo defaults."""
+
         raw_settings = self._load_settings_payload()
 
         return ParserSettings(
@@ -132,7 +147,11 @@ class SettingsLoader:
             ),
         )
 
+    # The CLI Spotify flow is retained as a separate config shape because it
+    # has different runtime needs from the web app.
     def load_spotify_config(self) -> SpotifyConfig:
+        """Load settings for the legacy CLI Spotify matching workflow."""
+
         self._load_environment()
         return SpotifyConfig(
             client_id=self._require_env("SPOTIFY_CLIENT_ID"),
@@ -142,7 +161,11 @@ class SettingsLoader:
             scopes=SPOTIFY_SCOPES.copy(),
         )
 
+    # The web app and worker share this exact config contract so jobs behave
+    # the same whether they are started locally or on Render.
     def load_web_app_config(self) -> WebAppConfig:
+        """Load configuration required by the FastAPI app and queue worker."""
+
         self._load_environment()
         return WebAppConfig(
             project_root=self.project_root,
@@ -161,10 +184,18 @@ class SettingsLoader:
             environment=self._get_env("APP_ENV", "development"),
         )
 
+    # Loading from `.env` here keeps process startup simple and avoids
+    # scattering dotenv calls across the codebase.
     def _load_environment(self) -> None:
+        """Load environment variables from the local `.env` file if present."""
+
         load_dotenv(self.project_root / ".env")
 
+    # Local parser settings take precedence, but the example file remains a
+    # documented fallback for first-run and shared defaults.
     def _load_settings_payload(self) -> dict[str, object]:
+        """Read parser settings from the local override or the example template."""
+
         local_path = self.project_root / SETTINGS_LOCAL_FILE
         example_path = self.project_root / SETTINGS_EXAMPLE_FILE
 
@@ -178,6 +209,8 @@ class SettingsLoader:
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, object]:
+        """Read and validate that a JSON file contains a top-level object."""
+
         with path.open("r", encoding="utf-8") as file:
             payload = json.load(file)
 
@@ -192,6 +225,8 @@ class SettingsLoader:
         key: str,
         default: list[str],
     ) -> list[str]:
+        """Return a list-of-strings setting or raise a clear validation error."""
+
         value = payload.get(key, default)
 
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
@@ -201,6 +236,8 @@ class SettingsLoader:
 
     @staticmethod
     def _require_env(name: str) -> str:
+        """Return a required environment variable after trimming shell quotes."""
+
         value = os.getenv(name)
         if not value:
             raise ValueError(f"Missing {name} in environment.")
@@ -208,5 +245,7 @@ class SettingsLoader:
 
     @staticmethod
     def _get_env(name: str, default: str) -> str:
+        """Return an environment variable with a default and normalized quoting."""
+
         value = os.getenv(name, default)
         return value.strip().strip("'").strip('"')

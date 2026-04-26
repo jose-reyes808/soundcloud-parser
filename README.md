@@ -4,6 +4,8 @@ SoundCloud Parser is now a backend-first web app that takes a SoundCloud profile
 
 The current public deployment is running on Render at `https://soundcloud-parser.onrender.com`.
 
+For a deeper walkthrough of how the app is structured internally, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 ## Current Status
 
 The web app is the primary product now. The old one-off CLI entry scripts have been removed from the repo root so the codebase reflects the deployed experience more accurately.
@@ -42,7 +44,6 @@ No Excel export is required for the web flow.
 soundcloud-parser/
 |-- webapp.py
 |-- worker.py
-|-- render.yaml
 |-- parser_settings.example.json
 |-- .env.example
 |-- templates/
@@ -127,7 +128,7 @@ Notes:
 
 ## Render Deployment
 
-This repo includes [render.yaml](./render.yaml) for a Render Blueprint deployment, but the current app was also brought up successfully by creating the services manually in Render.
+The current deployment was brought up by creating the services directly in Render.
 
 ### Render Services
 
@@ -185,11 +186,3 @@ The status page now polls `/api/imports/{job_id}` and displays:
 - unmatched count
 - the current artist and song being processed
 - the final playlist link when the job completes
-
-## Next Good Steps
-
-- force Spotify account selection with `show_dialog=true` for safer multi-user behavior
-- persist per-track match results in Postgres
-- add retries and stronger failure reporting around import jobs
-- support more SoundCloud URL formats and validation rules
-- move to a real frontend build if you decide to introduce React later
