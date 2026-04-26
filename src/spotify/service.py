@@ -56,9 +56,26 @@ class SpotifyMatchService:
         for row_index, (_, row) in enumerate(dataframe.iterrows(), start=1):
             artist = self._safe_cell(row.get("Artist"))
             song = self._safe_cell(row.get("Song"))
-            search_query = self.spotify_matcher.build_search_query(artist, song)
-            candidates = self.spotify_client.search_tracks(search_query)
-            match = self.spotify_matcher.match(artist, song, candidates, search_query)
+            search_queries = self.spotify_matcher.build_search_queries(
+                artist,
+                song,
+                original_title=self._safe_cell(row.get("Original Title")),
+                artist_source=self._safe_cell(row.get("Artist Source")),
+            )
+            search_query = search_queries[0]
+            match = None
+            for candidate_query in search_queries:
+                candidates = self.spotify_client.search_tracks(candidate_query)
+                candidate_match = self.spotify_matcher.match(
+                    artist,
+                    song,
+                    candidates,
+                    candidate_query,
+                )
+                if candidate_match is not None:
+                    search_query = candidate_query
+                    match = candidate_match
+                    break
 
             print(f"[{row_index}/{total_rows}] Matching {artist} - {song}")
 

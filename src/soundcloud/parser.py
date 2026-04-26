@@ -12,6 +12,11 @@ from src.models import ParserSettings
 class SoundCloudTitleParser:
     """Convert raw SoundCloud titles into cleaner artist and song values."""
 
+    VERSION_ONLY_PATTERN = re.compile(
+        r"^(?:[a-z0-9&'.,+\s]+)\b(?:remix|edit|flip|bootleg|rework|vip|mix)\b$",
+        re.IGNORECASE,
+    )
+
     def __init__(self, settings: ParserSettings) -> None:
         """Store the parser rules that drive cleanup and liveset detection."""
 
@@ -130,9 +135,22 @@ class SoundCloudTitleParser:
         parts = re.split(r"\s+[-–—|]\s+", normalized_title, maxsplit=1)
 
         if len(parts) == 2:
-            artist = parts[0].strip()
-            song = parts[1].strip()
-            source = "Parsed from Title"
+            left_part = parts[0].strip()
+            right_part = parts[1].strip()
+
+            # A split title is not always an artist/title split. Tracks like
+            # "Melbournia - Will Sparks Edit" use the suffix as version
+            # metadata rather than as a standalone title. In that shape, the
+            # uploader is often a better artist signal than the left-hand side,
+            # and preserving the full title gives the matcher more context.
+            if self._looks_like_version_only_fragment(right_part):
+                artist = uploader
+                song = normalized_title.strip()
+                source = "Uploader Fallback"
+            else:
+                artist = left_part
+                song = right_part
+                source = "Parsed from Title"
         else:
             artist = uploader
             song = normalized_title.strip()
@@ -154,3 +172,20 @@ class SoundCloudTitleParser:
         if any(keyword in content.lower() for keyword in self.settings.paren_keywords):
             return f"({content})"
         return ""
+
+    @classmethod
+    def _looks_like_version_only_fragment(cls, value: str) -> bool:
+        """Detect suffixes that are version labels rather than song titles.
+
+        This heuristic is intentionally narrow. We only fall back when the
+        right-hand fragment looks like a bare edit/remix credit on its own,
+        which helps with mislabeled uploads without weakening the normal
+        `Artist - Song` parsing path.
+        """
+
+        normalized_value = value.strip()
+        if not normalized_value:
+            return False
+        if "(" in normalized_value or "[" in normalized_value:
+            return False
+        return bool(cls.VERSION_ONLY_PATTERN.fullmatch(normalized_value))

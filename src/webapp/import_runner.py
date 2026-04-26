@@ -95,9 +95,26 @@ class WebImportRunner:
                     record.artist,
                     record.original_title,
                 )
-                search_query = spotify_matcher.build_search_query(record.artist, record.song)
-                candidates = spotify_api.search_tracks(search_query)
-                match = spotify_matcher.match(record.artist, record.song, candidates, search_query)
+                search_queries = spotify_matcher.build_search_queries(
+                    record.artist,
+                    record.song,
+                    original_title=record.original_title,
+                    artist_source=record.artist_source,
+                )
+                search_query = search_queries[0]
+                match = None
+                for candidate_query in search_queries:
+                    candidates = spotify_api.search_tracks(candidate_query)
+                    candidate_match = spotify_matcher.match(
+                        record.artist,
+                        record.song,
+                        candidates,
+                        candidate_query,
+                    )
+                    if candidate_match is not None:
+                        search_query = candidate_query
+                        match = candidate_match
+                        break
                 print(f"[web import {job_id}] {index}/{len(likes)} {record.artist} - {record.song}")
 
                 if match is None:

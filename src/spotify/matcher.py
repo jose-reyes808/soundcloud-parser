@@ -14,6 +14,29 @@ from src.models import SpotifyTrackMatch
 class SpotifyTrackMatcher:
     """Score Spotify search results against a parsed artist and song pair."""
 
+    FEATURE_PATTERN = re.compile(r"\b(?:feat|ft|featuring)\.?\b", re.IGNORECASE)
+    FEATURE_BLOCK_PATTERN = re.compile(
+        r"[\(\[]\s*(?:feat|ft|featuring)\.?\s+[^\)\]]+[\)\]]",
+        re.IGNORECASE,
+    )
+    TRAILING_COLLABORATOR_TITLE_PATTERN = re.compile(
+        r"\s+\b(?:with|w/)\b\s+.+$",
+        re.IGNORECASE,
+    )
+    TITLE_DECORATION_PATTERN = re.compile(
+        r"\b(?:teaser|preview|forthcoming|official|album version|radio edit|radio mix)\b",
+        re.IGNORECASE,
+    )
+    TITLE_SUFFIX_SEPARATOR_PATTERN = re.compile(r"\s+-\s+")
+    MIX_DESCRIPTOR_PATTERN = re.compile(
+        r"[\(\[]\s*([^\)\]]*\b(?:original mix|extended mix|club mix|mix|edit|remix|vip|bootleg|rework)\b[^\)\]]*)\s*[\)\]]",
+        re.IGNORECASE,
+    )
+    ARTIST_SPLIT_PATTERN = re.compile(
+        r"\s*(?:,|&|\band\b|\bvs\b|/|;|\bwith\b|\bx\b|\bfeat\b\.?|\bft\b\.?|\bfeaturing\b)\s*",
+        re.IGNORECASE,
+    )
+
     # The system is biased toward false negatives over false positives here.
     # It is better to leave a track unmatched than to quietly add the wrong song
     # to a user's playlist and erode trust in the import.
@@ -70,6 +93,36 @@ class SpotifyTrackMatcher:
 
         return f"{artist_query} {song_query}".strip()
 
+    def build_search_queries(
+        self,
+        artist: str,
+        song: str,
+        *,
+        original_title: str = "",
+        artist_source: str = "",
+    ) -> list[str]:
+        """Build a small set of progressively looser Spotify search queries.
+
+        The first query stays strict. Additional queries are reserved for
+        uploader-fallback rows, where the parsed artist is known to be weaker
+        and we can justify spending a couple of targeted recovery attempts.
+        """
+
+        queries: list[str] = [self.build_search_query(artist, song)]
+
+        if artist_source != "Uploader Fallback":
+            return queries
+
+        inferred_artist, inferred_song = self._infer_artist_from_trailing_mix_title(original_title)
+        if inferred_artist and inferred_song:
+            queries.append(self.build_search_query(inferred_artist, inferred_song))
+
+        canonical_song = self._canonicalize_song_title(song)
+        if canonical_song:
+            queries.append(f'track:"{canonical_song}"')
+
+        return self._dedupe_queries(queries)
+
     # Song title gets more weight than artist because SoundCloud artist metadata
     # is often inferred or uploader-driven, while the title usually carries the
     # strongest identity signal.
@@ -92,19 +145,177 @@ class SpotifyTrackMatcher:
 
         normalized_source_song = self._normalize_text(source_song)
         normalized_source_artist = self._normalize_text(source_artist)
+        canonical_source_song = self._canonicalize_song_title(source_song)
+        canonical_candidate_song = self._canonicalize_song_title(str(candidate.get("name", "")))
+        source_contributors = self._extract_contributors(source_artist, source_song)
+        candidate_contributors = self._extract_contributors(
+            " ".join(
+                artist_item.get("name", "")
+                for artist_item in candidate.get("artists", [])
+                if artist_item.get("name")
+            ),
+            str(candidate.get("name", "")),
+        )
 
-        song_score = SequenceMatcher(
+        direct_song_score = SequenceMatcher(None, normalized_source_song, candidate_song).ratio()
+        canonical_song_score = SequenceMatcher(
             None,
-            normalized_source_song,
-            candidate_song,
+            canonical_source_song,
+            canonical_candidate_song,
         ).ratio()
-        artist_score = SequenceMatcher(
+        song_score = max(direct_song_score, canonical_song_score)
+
+        direct_artist_score = SequenceMatcher(
             None,
             normalized_source_artist,
             candidate_artists,
         ).ratio()
+        contributor_overlap_score = self._score_contributor_overlap(
+            source_contributors,
+            candidate_contributors,
+        )
+        artist_score = max(direct_artist_score, contributor_overlap_score)
+
+        if canonical_source_song and canonical_source_song == canonical_candidate_song:
+            song_score = max(song_score, 0.98)
+        if source_contributors and source_contributors.issubset(candidate_contributors):
+            artist_score = max(artist_score, 0.98)
 
         return (song_score * 0.65) + (artist_score * 0.35)
+
+    @classmethod
+    def _canonicalize_song_title(cls, value: str) -> str:
+        """Reduce a song title to its identity-bearing core for comparison.
+
+        SoundCloud titles often omit metadata that Spotify adds for catalog
+        hygiene, such as featured artists or "Radio Edit" suffixes. Matching
+        should reward shared song identity, not penalize the richer storefront
+        representation.
+        """
+
+        normalized_value = value.strip()
+        normalized_value = cls.FEATURE_BLOCK_PATTERN.sub("", normalized_value)
+        normalized_value = cls.TRAILING_COLLABORATOR_TITLE_PATTERN.sub("", normalized_value)
+
+        segments = cls.TITLE_SUFFIX_SEPARATOR_PATTERN.split(normalized_value)
+        if len(segments) > 1:
+            kept_segments = [segments[0]]
+            for segment in segments[1:]:
+                if not cls.TITLE_DECORATION_PATTERN.search(segment):
+                    kept_segments.append(segment)
+            normalized_value = " - ".join(kept_segments)
+
+        normalized_value = re.sub(r"[\(\[]([^\)\]]+)[\)\]]", cls._strip_decorative_brackets, normalized_value)
+        return cls._normalize_text(normalized_value)
+
+    @classmethod
+    def _strip_decorative_brackets(cls, match: re.Match[str]) -> str:
+        """Remove bracketed title text when it is descriptive rather than identifying."""
+
+        content = match.group(1)
+        if cls.FEATURE_PATTERN.search(content) or cls.TITLE_DECORATION_PATTERN.search(content):
+            return ""
+        return f" {content} "
+
+    @classmethod
+    def _extract_contributors(cls, artist: str, song: str) -> set[str]:
+        """Extract likely contributor names from artist and featured-title text.
+
+        Contributor overlap is a more stable signal than raw artist-string
+        similarity because Spotify and SoundCloud express collaborations with
+        different punctuation, ordering, and placement of featured artists.
+        """
+
+        contributor_names = cls._split_artist_names(artist)
+        feature_match = re.search(
+            r"\b(?:feat|ft|featuring|with|w/)\.?\s+(.+?)(?:$|\)|\]|\s-\s)",
+            song,
+            re.IGNORECASE,
+        )
+        if feature_match:
+            contributor_names.update(cls._split_artist_names(feature_match.group(1)))
+        return contributor_names
+
+    @classmethod
+    def _split_artist_names(cls, value: str) -> set[str]:
+        """Split a composite artist string into normalized contributor tokens."""
+
+        normalized_value = cls._normalize_text(value)
+        contributors = {
+            token.strip()
+            for token in cls.ARTIST_SPLIT_PATTERN.split(normalized_value)
+            if token.strip()
+        }
+        return {token for token in contributors if len(token) > 1}
+
+    @staticmethod
+    def _score_contributor_overlap(source: set[str], candidate: set[str]) -> float:
+        """Score how completely the candidate covers the source contributors.
+
+        Artist credits across platforms are messy in predictable ways: `vs`
+        separators, featured-artist placement, punctuation differences, and the
+        occasional one-character spelling drift. The goal here is not to demand
+        byte-for-byte equality, but to answer the more useful question: "does
+        this Spotify result appear to contain the same collaborating artists?"
+        """
+
+        if not source or not candidate:
+            return 0.0
+
+        matched_source_contributors = 0
+        for source_name in source:
+            best_similarity = max(
+                (SequenceMatcher(None, source_name, candidate_name).ratio() for candidate_name in candidate),
+                default=0.0,
+            )
+            if best_similarity >= 0.84:
+                matched_source_contributors += 1
+
+        return matched_source_contributors / len(source)
+
+    @classmethod
+    def _infer_artist_from_trailing_mix_title(cls, original_title: str) -> tuple[str | None, str | None]:
+        """Recover `artist` and `song` from uploader-fallback titles when possible.
+
+        Some uploads append the actual artist after a mix descriptor instead of
+        placing it before a dash, e.g. `Burner (Original Mix) Leik`. This is
+        too specialized to bake into the primary parser, but it is useful as a
+        second-pass search hint once we already know the row came from uploader
+        fallback.
+        """
+
+        normalized_title = " ".join(original_title.strip().split())
+        mix_match = cls.MIX_DESCRIPTOR_PATTERN.search(normalized_title)
+        if mix_match is None:
+            return None, None
+
+        trailing_text = normalized_title[mix_match.end():].strip(" -")
+        if not trailing_text:
+            return None, None
+        if len(trailing_text.split()) > 4:
+            return None, None
+
+        leading_text = normalized_title[:mix_match.start()].strip(" -")
+        mix_text = mix_match.group(1).strip()
+        if not leading_text or not mix_text:
+            return None, None
+
+        inferred_song = f"{leading_text} ({mix_text})"
+        return trailing_text, inferred_song
+
+    @staticmethod
+    def _dedupe_queries(queries: list[str]) -> list[str]:
+        """Preserve query order while removing duplicate search attempts."""
+
+        seen_queries: set[str] = set()
+        unique_queries: list[str] = []
+        for query in queries:
+            normalized_query = query.strip()
+            if not normalized_query or normalized_query in seen_queries:
+                continue
+            seen_queries.add(normalized_query)
+            unique_queries.append(normalized_query)
+        return unique_queries
 
     @staticmethod
     def _normalize_text(value: str) -> str:
