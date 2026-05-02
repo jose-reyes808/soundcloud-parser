@@ -157,6 +157,9 @@ class SpotifyTrackMatcher:
     # Song title gets more weight than artist because SoundCloud artist metadata
     # is often inferred or uploader-driven, while the title usually carries the
     # strongest identity signal.
+    WEAK_ARTIST_EVIDENCE_CAP = 0.49
+    MINIMUM_ARTIST_EVIDENCE = 0.5
+
     def _score_candidate(
         self,
         source_artist: str,
@@ -224,7 +227,20 @@ class SpotifyTrackMatcher:
             if canonical_source_song != canonical_candidate_song and title_token_overlap_score < 1.0:
                 return 0.0
 
-        return (song_score * 0.65) + (artist_score * 0.35)
+        score = (song_score * 0.65) + (artist_score * 0.35)
+
+        # An exact title match is common across unrelated catalogs. When the
+        # parsed SoundCloud artist does not resemble the Spotify artist at all,
+        # cap the score below the acceptance threshold instead of letting title
+        # similarity alone create a confident false positive.
+        if (
+            normalized_source_artist
+            and artist_score < self.MINIMUM_ARTIST_EVIDENCE
+            and contributor_overlap_score == 0.0
+        ):
+            return min(score, self.WEAK_ARTIST_EVIDENCE_CAP)
+
+        return score
 
     @classmethod
     def _canonicalize_song_title(cls, value: str) -> str:
